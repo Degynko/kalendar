@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kalendár zmien</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --bg2: var(--tg-theme-secondary-bg-color, #f2f3f5);
+    --text: var(--tg-theme-text-color, #16181d);
+    --hint: var(--tg-theme-hint-color, #8a8f98);
+    --accent: var(--tg-theme-button-color, #2f6fdf);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --star: #f2a516;
+    --line: color-mix(in srgb, var(--hint) 22%, transparent);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 14px 16px calc(24px + env(safe-area-inset-bottom)); }
+
+  header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  header h1 { flex: 1; margin: 0; font-size: 19px; font-weight: 650; text-align: center; }
+  .nav { width: 40px; height: 40px; border: 0; border-radius: 12px; background: var(--bg2);
+    color: var(--text); font-size: 18px; cursor: pointer; }
+  .nav:disabled { opacity: .3; }
+  .sub { text-align: center; color: var(--hint); font-size: 13px; margin-bottom: 14px; }
+
+  .summary { display: flex; gap: 8px; margin-bottom: 14px; }
+  .stat { flex: 1; background: var(--bg2); border-radius: 14px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--hint); font-size: 12px; }
+
+  .day { display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 9px 0;
+    border-top: 1px solid var(--line); align-items: start; }
+  .day:first-of-type { border-top: 0; }
+  .date { text-align: center; padding-top: 2px; }
+  .date .dn { font-size: 12px; color: var(--hint); text-transform: uppercase; letter-spacing: .03em; }
+  .date .dd { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .day.today .dd { color: var(--accent-text); background: var(--accent); border-radius: 10px; display: inline-block;
+    min-width: 32px; padding: 0 4px; }
+  .day.weekend .dn { color: var(--accent); }
+  .shifts { display: flex; flex-direction: column; gap: 6px; min-height: 34px; justify-content: center; }
+  .empty { color: var(--hint); font-size: 13px; }
+
+  .shift { border-radius: 12px; padding: 7px 10px; display: flex; align-items: center; gap: 8px; }
+  .shift .t { font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .shift .b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .shift .tag { font-size: 11px; font-weight: 650; padding: 2px 6px; border-radius: 6px; white-space: nowrap; }
+  .mine { background: var(--accent); color: var(--accent-text); }
+  .mine .tag { background: color-mix(in srgb, var(--accent-text) 22%, transparent); }
+  .free { border: 1.5px dashed var(--accent); color: var(--text); }
+  .free .tag { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .other { border: 1px solid var(--line); color: var(--hint); }
+  .star { color: var(--star); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; color: var(--hint); font-size: 12px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: -2px; margin-right: 5px; }
+  .legend .l1 { background: var(--accent); }
+  .legend .l2 { border: 1.5px dashed var(--accent); }
+  .legend .l3 { border: 1px solid var(--line); }
+  .toggle { margin-top: 14px; width: 100%; border: 0; border-radius: 12px; padding: 11px; background: var(--bg2);
+    color: var(--text); font: inherit; cursor: pointer; }
+  .err { text-align: center; color: var(--hint); margin-top: 40px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <button class="nav" id="prev" aria-label="Predchádzajúci týždeň">◀</button>
+    <h1 id="title">Moje zmeny</h1>
+    <button class="nav" id="next" aria-label="Ďalší týždeň">▶</button>
+  </header>
+  <div class="sub" id="range"></div>
+  <div class="summary">
+    <div class="stat"><b id="sCount">0</b><span>moje zmeny</span></div>
+    <div class="stat"><b id="sHours">0 h</b><span>odpracovať</span></div>
+    <div class="stat"><b id="sFree">0</b><span>voľné ⭐/víkend</span></div>
+  </div>
+  <section id="days"></section>
+  <button class="toggle" id="toggle"></button>
+  <div class="legend">
+    <span><i class="l1"></i>prihlásená</span>
+    <span><i class="l2"></i>voľná víkend / vrátky</span>
+    <span><i class="l3"></i>voľná ostatné</span>
+    <span><span class="star">★</span> vrátky</span>
+  </div>
+</main>
+<script>
+/* Dáta prídu v odkaze (startapp), nikde sa neukladajú.
+   Formát: "1" + yyyymmdd (pondelok) + počet(2×b36) + zmeny(7 znakov) + vedúci (base64url UTF-8, "|")
+   zmena = deň(1×b36, posun od pondelka) + začiatok(2×b36, štvrťhodiny) + koniec(2×b36) + druh(1) + vedúci(1×b36)
+   druh: m = moja, v = voľná víkend/vrátky, o = voľná ostatné; VEĽKÉ písmeno = vrátky */
+const tg = window.Telegram && Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const DAYS = ["Po", "Ut", "St", "Št", "Pi", "So", "Ne"];
+const MONTHS = ["jan", "feb", "mar", "apr", "máj", "jún", "júl", "aug", "sep", "okt", "nov", "dec"];
+
+function param() {
+  const p = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param;
+  if (p) return p;
+  const q = new URLSearchParams(location.search);
+  return q.get("tgWebAppStartParam") || q.get("startapp") || location.hash.slice(1);
+}
+
+function b64urlDecode(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+}
+
+function decode(p) {
+  if (!p || p[0] !== "1") throw new Error("bad");
+  const y = +p.slice(1, 5), mo = +p.slice(5, 7) - 1, d = +p.slice(7, 9);
+  const base = new Date(y, mo, d);
+  const n = parseInt(p.slice(9, 11), 36);
+  const body = p.slice(11, 11 + n * 7);
+  const bosses = p.length > 11 + n * 7 ? b64urlDecode(p.slice(11 + n * 7)).split("|") : [];
+  const shifts = [];
+  for (let i = 0; i < n; i++) {
+    const c = body.slice(i * 7, i * 7 + 7);
+    const kind = c[5];
+    shifts.push({
+      day: parseInt(c[0], 36),
+      start: parseInt(c.slice(1, 3), 36) * 15,
+      end: parseInt(c.slice(3, 5), 36) * 15,
+      kind: kind.toLowerCase(),
+      returns: kind !== kind.toLowerCase(),
+      boss: bosses[parseInt(c[6], 36)] || "",
+    });
+  }
+  return { base, shifts };
+}
+
+const hm = m => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const len = s => ((s.end - s.start + 1440) % 1440 || 1440) / 60;
+const fmtH = h => (Math.round(h * 10) / 10).toString().replace(".", ",") + " h";
+
+let data, week = 0, showOther = false;
+const MAX_WEEK = 4;
+
+function render() {
+  const start = new Date(data.base); start.setDate(start.getDate() + week * 7);
+  const end = new Date(start); end.setDate(end.getDate() + 6);
+  document.getElementById("title").textContent =
+    week === 0 ? "Tento týždeň" : week === 1 ? "Budúci týždeň" : `O ${week} týždne`;
+  document.getElementById("range").textContent =
+    `${start.getDate()}. ${MONTHS[start.getMonth()]} – ${end.getDate()}. ${MONTHS[end.getMonth()]} ${end.getFullYear()}`;
+  document.getElementById("prev").disabled = week === 0;
+  document.getElementById("next").disabled = week === MAX_WEEK;
+
+  const inWeek = data.shifts.filter(s => s.day >= week * 7 && s.day < week * 7 + 7);
+  const mine = inWeek.filter(s => s.kind === "m");
+  document.getElementById("sCount").textContent = mine.length;
+  document.getElementById("sHours").textContent = fmtH(mine.reduce((a, s) => a + len(s), 0));
+  document.getElementById("sFree").textContent = inWeek.filter(s => s.kind === "v").length;
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const box = document.getElementById("days"); box.innerHTML = "";
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(start); date.setDate(date.getDate() + i);
+    const items = inWeek.filter(s => s.day === week * 7 + i && (s.kind !== "o" || showOther))
+      .sort((a, b) => (a.kind > b.kind) - (a.kind < b.kind) || a.start - b.start);
+    const row = document.createElement("div");
+    row.className = "day" + (i >= 5 ? " weekend" : "") + (+date === +today ? " today" : "");
+    row.innerHTML = `<div class="date"><div class="dn">${DAYS[i]}</div><div class="dd">${date.getDate()}</div></div>`;
+    const col = document.createElement("div"); col.className = "shifts";
+    if (!items.length) col.innerHTML = `<span class="empty">—</span>`;
+    for (const s of items) {
+      const el = document.createElement("div");
+      el.className = "shift " + (s.kind === "m" ? "mine" : s.kind === "v" ? "free" : "other");
+      const tag = s.kind === "m" ? "moja" : "voľná";
+      el.innerHTML = `<span class="t">${hm(s.start)}–${hm(s.end)}</span>` +
+        `<span class="b">${s.returns ? '<span class="star">★</span> ' : ""}${s.boss}</span>` +
+        `<span class="tag">${tag}</span>`;
+      el.querySelector(".b").title = s.boss;
+      col.appendChild(el);
+    }
+    row.appendChild(col);
+    box.appendChild(row);
+  }
+  const nOther = inWeek.filter(s => s.kind === "o").length;
+  const t = document.getElementById("toggle");
+  t.hidden = !nOther;
+  t.textContent = showOther ? "Skryť ostatné voľné zmeny" : `Zobraziť ostatné voľné zmeny (${nOther})`;
+}
+
+document.getElementById("prev").onclick = () => { week = Math.max(0, week - 1); render(); };
+document.getElementById("next").onclick = () => { week = Math.min(MAX_WEEK, week + 1); render(); };
+document.getElementById("toggle").onclick = () => { showOther = !showOther; render(); };
+
+try {
+  data = decode(param());
+  render();
+} catch (e) {
+  document.querySelector("main").innerHTML =
+    '<p class="err">📆 Kalendár otvor tlačidlom <b>📆 Kalendár</b> v skupine s botom — údaje prídu priamo z bota.</p>';
+}
+</script>
+</body>
+</html>
